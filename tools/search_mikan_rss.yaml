@@ -1,0 +1,37 @@
+identity:
+  name: search_mikan_rss
+  author: zslowen
+  label:
+    en_US: Search Mikan Project RSS
+    zh_Hans: 搜索蜜柑 Project 字幕组 RSS（兼容）
+description:
+  human:
+    en_US: Search public Mikan Project pages for anime and subtitle-group RSS candidates.
+    zh_Hans: 兼容旧流程：一次搜索番剧和字幕组 RSS 候选。
+  llm: Legacy compatibility tool. Prefer search_mikan_anime followed by list_mikan_rss_candidates for new calls, so the user or Agent can resolve season ambiguity first. This tool never logs in, subscribes, or changes AutoBangumi.
+parameters:
+  - name: anime_title
+    type: string
+    required: true
+    label:
+      en_US: Anime title
+      zh_Hans: 番剧名称
+    human_description:
+      en_US: Anime title or distinctive title fragment to search on Mikan Project.
+      zh_Hans: 用于蜜柑 Project 搜索的番剧名称或有辨识度的标题片段。
+    llm_description: Required anime title or distinctive title fragment. Do not include credentials, URLs, or RSS tokens.
+    form: llm
+  - name: fansub_group
+    type: string
+    required: false
+    label:
+      en_US: Subtitle group
+      zh_Hans: 字幕组
+    human_description:
+      en_US: Optional subtitle group name to narrow the public RSS candidates.
+      zh_Hans: 可选，用于缩小公开 RSS 候选范围的字幕组名称。
+    llm_description: Optional subtitle group name. Omit it when the user has not chosen a group.
+    form: llm
+extra:
+  python:
+    source: tools/search_mikan_rss.py

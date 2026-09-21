@@ -1,0 +1,15 @@
+identity:
+  name: list_ab_subscriptions
+  author: zslowen
+  label:
+    en_US: List AutoBangumi RSS subscriptions
+    zh_Hans: 列出 AutoBangumi RSS 订阅
+description:
+  human:
+    en_US: Return the current RSS subscription list from AutoBangumi.
+    zh_Hans: 返回 AutoBangumi 当前 RSS 订阅列表。
+  llm: Read the current AutoBangumi RSS subscription list. RSS URLs and other sensitive fields are redacted.
+parameters: []
+extra:
+  python:
+    source: tools/list_ab_subscriptions.py

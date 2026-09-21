@@ -1,0 +1,56 @@
+identity:
+  author: zslowen
+  name: autobangumi_readonly
+  label:
+    en_US: AutoBangumi Subscription
+    zh_Hans: AutoBangumi 追番订阅
+  description:
+    en_US: Inspect anime RSS feeds and manage AutoBangumi 3.2.8 subscriptions through a strict allowlist and confirmation flow.
+    zh_Hans: 通过严格白名单与人工确认流程检查番剧 RSS，并管理 AutoBangumi 3.2.8 订阅。
+  icon: autobangumi-readonly.svg
+  tags:
+    - entertainment
+    - utilities
+credentials_for_provider:
+  ab_base_url:
+    type: text-input
+    required: false
+    label:
+      en_US: AutoBangumi URL
+      zh_Hans: AutoBangumi 地址
+    placeholder:
+      en_US: http://192.168.1.100:7892
+      zh_Hans: http://192.168.1.100:7892
+  ab_username:
+    type: secret-input
+    required: false
+    label:
+      en_US: AutoBangumi username
+      zh_Hans: AutoBangumi 用户名
+  ab_password:
+    type: secret-input
+    required: false
+    label:
+      en_US: AutoBangumi password
+      zh_Hans: AutoBangumi 密码
+  ab_expected_version:
+    type: text-input
+    required: false
+    default: "3.2.8"
+    label:
+      en_US: Expected AutoBangumi version
+      zh_Hans: 预期 AutoBangumi 版本
+tools:
+  - tools/get_ab_status.yaml
+  - tools/list_ab_subscriptions.yaml
+  - tools/get_ab_rss_records.yaml
+  - tools/list_ab_bangumi_rules.yaml
+  - tools/search_mikan_anime.yaml
+  - tools/list_mikan_rss_candidates.yaml
+  - tools/inspect_mikan_rss_candidate.yaml
+  - tools/prepare_ab_subscription.yaml
+  - tools/subscribe_ab_rss.yaml
+  - tools/search_mikan_rss.yaml
+extra:
+  python:
+    source: provider/autobangumi_readonly.py

@@ -1,0 +1,15 @@
+identity:
+  name: get_ab_status
+  author: zslowen
+  label:
+    en_US: Get AutoBangumi status
+    zh_Hans: 查询 AutoBangumi 状态
+description:
+  human:
+    en_US: Return the current AutoBangumi connection status and version.
+    zh_Hans: 返回当前 AutoBangumi 连接状态和版本。
+  llm: Read the current AutoBangumi service status and version. This tool never changes AutoBangumi.
+parameters: []
+extra:
+  python:
+    source: tools/get_ab_status.py

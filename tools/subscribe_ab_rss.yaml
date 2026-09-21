@@ -1,0 +1,79 @@
+identity:
+  name: subscribe_ab_rss
+  author: zslowen
+  label:
+    en_US: Create verified AutoBangumi subscription
+    zh_Hans: 创建并验证 AutoBangumi 订阅
+description:
+  human:
+    en_US: High-risk controlled write. Revalidates a confirmed preview, writes once, then verifies by read-back.
+    zh_Hans: 高风险受控写入：重新校验已确认预览，只写入一次，并通过只读回查验证结果。
+  llm: High-risk write tool. Do not call without explicit confirmation of the exact final media-library title, season, optional premiere year, selected subtitle group, effective group credit, RSS URL, metadata adjustments, joint-credit warning when present, and preview_id shown by prepare_ab_subscription. Do not add a separate boolean confirmation parameter. The tool re-runs analysis, requires group_match and the source analysis to remain stable, preserves the parsed effective group credit, applies only the confirmed title/season/year overrides, sends at most one subscription request, never retries a write, and verifies RSS and Bangumi state afterward.
+parameters:
+  - name: rss_url
+    type: string
+    required: true
+    label:
+      en_US: Confirmed Mikan RSS URL
+      zh_Hans: 已确认蜜柑 RSS 地址
+    human_description:
+      en_US: The same public RSS URL used in the confirmed preview.
+      zh_Hans: 与已确认预览完全对应的公开 RSS 地址。
+    form: llm
+  - name: expected_title
+    type: string
+    required: true
+    label:
+      en_US: Confirmed final title
+      zh_Hans: 确认后的番剧名称
+    human_description:
+      en_US: The exact final media-library title shown and confirmed in the preview.
+      zh_Hans: 预览中展示且用户确认的媒体库最终番剧名称。
+    llm_description: Copy the target title from the confirmed preview exactly.
+    form: llm
+  - name: expected_season
+    type: number
+    required: true
+    label:
+      en_US: Confirmed final season
+      zh_Hans: 确认后的季度
+    human_description:
+      en_US: The final positive-integer media-library season shown and confirmed in the preview.
+      zh_Hans: 预览中展示且用户确认的媒体库最终正整数季度。
+    llm_description: Copy the target season from the confirmed preview exactly.
+    form: llm
+  - name: expected_year
+    type: number
+    required: false
+    label:
+      en_US: Confirmed premiere year (optional)
+      zh_Hans: 确认后的首播年份（可选）
+    human_description:
+      en_US: Optional four-digit target year from the confirmed preview.
+      zh_Hans: 预览中展示且用户确认的可选四位首播年份。
+    llm_description: Copy the optional target year from the confirmed preview exactly. Omit it if the preview did not specify one.
+    form: llm
+  - name: expected_group
+    type: string
+    required: true
+    label:
+      en_US: Confirmed subtitle group
+      zh_Hans: 已确认字幕组
+    human_description:
+      en_US: The subtitle group shown and confirmed in the preview.
+      zh_Hans: 预览中展示且用户已经确认的字幕组。
+    llm_description: Copy selected_group from the confirmed preview exactly. The plugin revalidates the parsed effective_group and joint match through preview_id before any write.
+    form: llm
+  - name: preview_id
+    type: string
+    required: true
+    label:
+      en_US: Confirmed preview ID
+      zh_Hans: 已确认预览 ID
+    human_description:
+      en_US: Exact preview_id returned by prepare_ab_subscription and confirmed by the user.
+      zh_Hans: prepare_ab_subscription 返回且用户已经确认的完整 preview_id。
+    form: llm
+extra:
+  python:
+    source: tools/subscribe_ab_rss.py

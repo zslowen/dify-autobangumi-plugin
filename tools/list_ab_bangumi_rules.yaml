@@ -1,0 +1,46 @@
+identity:
+  name: list_ab_bangumi_rules
+  author: zslowen
+  label:
+    en_US: List AutoBangumi rules
+    zh_Hans: 查询 AutoBangumi 番剧规则
+description:
+  human:
+    en_US: Read bounded AutoBangumi Bangumi rules for duplicate checks.
+    zh_Hans: 查询有限数量的 AutoBangumi 番剧规则，用于追番前查重。
+  llm: Before searching Mikan for a subscription request, call this tool with the title and, when known, season. official_title plus season is the primary identity; group_name identifies a different RSS source for that work and season. added only says whether a downloader RSS rule was created, not whether the show is subscribed. eps_collect is intentionally absent and must not be used for a subscription judgment. This tool is read-only.
+parameters:
+  - name: title
+    type: string
+    required: false
+    label:
+      en_US: Title
+      zh_Hans: 番剧名称
+    human_description:
+      en_US: Optional title matched locally against official title, raw title, and aliases.
+      zh_Hans: 可选；在本地匹配 official_title、title_raw 和 title_aliases。
+    form: llm
+  - name: season
+    type: number
+    required: false
+    label:
+      en_US: Season
+      zh_Hans: 季数
+    human_description:
+      en_US: Optional positive integer season; matched exactly.
+      zh_Hans: 可选正整数季数；仅精确匹配 Bangumi.season。
+    form: llm
+  - name: limit
+    type: number
+    required: false
+    default: 20
+    label:
+      en_US: Result limit
+      zh_Hans: 返回数量上限
+    human_description:
+      en_US: Number of rules to return, from 1 to 50.
+      zh_Hans: 返回规则数量，范围为 1 至 50，默认 20。
+    form: llm
+extra:
+  python:
+    source: tools/list_ab_bangumi_rules.py

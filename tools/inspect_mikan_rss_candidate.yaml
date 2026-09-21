@@ -1,0 +1,26 @@
+identity:
+  name: inspect_mikan_rss_candidate
+  author: zslowen
+  label:
+    en_US: Inspect one Mikan RSS candidate
+    zh_Hans: 检查单个蜜柑 RSS 候选
+description:
+  human:
+    en_US: Read one public Mikan RSS feed and show bounded samples without using AutoBangumi or writing any state.
+    zh_Hans: 直接读取一个公开蜜柑 RSS，返回有限样本；不经过 AutoBangumi，也不写入任何状态。
+  llm: Read-only candidate inspection. Use this when the same subtitle group has multiple RSS candidates. Inspect each distinct candidate once, then compare reachability, sample titles, publication times, and item counts. A failed candidate does not prevent inspecting a different candidate. Do not ask users to interpret subgroup_id when content evidence can distinguish the feeds. Do not infer subtitle quality or group reputation from item_count.
+parameters:
+  - name: rss_url
+    type: string
+    required: true
+    label:
+      en_US: Public Mikan RSS URL
+      zh_Hans: 公开蜜柑 RSS 地址
+    human_description:
+      en_US: An allowlisted single-anime subtitle-group RSS URL returned by the candidate tool.
+      zh_Hans: 候选工具返回的、白名单允许的单部番剧字幕组 RSS 地址。
+    llm_description: Copy one rss_url returned by list_mikan_rss_candidates. Different candidates may be inspected once each; never alter IDs or query parameters.
+    form: llm
+extra:
+  python:
+    source: tools/inspect_mikan_rss_candidate.py

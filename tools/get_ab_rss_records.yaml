@@ -1,0 +1,27 @@
+identity:
+  name: get_ab_rss_records
+  author: zslowen
+  label:
+    en_US: Get AutoBangumi RSS records
+    zh_Hans: 获取 AutoBangumi RSS 解析记录
+description:
+  human:
+    en_US: Return parsed records for one AutoBangumi RSS subscription.
+    zh_Hans: 返回一个 AutoBangumi RSS 订阅的解析记录。
+  llm: Read parsed records for one AutoBangumi RSS subscription. rss_id must be a positive integer. This tool never changes AutoBangumi.
+parameters:
+  - name: rss_id
+    type: number
+    required: true
+    label:
+      en_US: RSS ID
+      zh_Hans: RSS ID
+    human_description:
+      en_US: Numeric ID of an RSS subscription returned by list_ab_subscriptions.
+      zh_Hans: 由 list_ab_subscriptions 返回的 RSS 订阅数字 ID。
+    llm_description: A positive integer RSS subscription ID returned by list_ab_subscriptions.
+    form: llm
+    min: 1
+extra:
+  python:
+    source: tools/get_ab_rss_records.py

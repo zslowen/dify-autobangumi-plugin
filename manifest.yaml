@@ -1,0 +1,29 @@
+version: 0.1.0
+type: plugin
+author: zslowen
+name: autobangumi_readonly
+label:
+  en_US: AutoBangumi Subscription
+  zh_Hans: AutoBangumi 追番订阅
+description:
+  en_US: Inspect anime RSS feeds and manage AutoBangumi subscriptions through a confirmation-gated workflow.
+  zh_Hans: 检查番剧 RSS，并通过人工确认控制的流程管理 AutoBangumi 订阅。
+icon: autobangumi-readonly.svg
+created_at: "2026-09-16T00:00:00Z"
+resource:
+  memory: 134217728
+  permission:
+    tool:
+      enabled: true
+plugins:
+  tools:
+    - provider/autobangumi_readonly.yaml
+meta:
+  version: 0.0.1
+  arch:
+    - amd64
+    - arm64
+  runner:
+    language: python
+    version: "3.12"
+    entrypoint: main

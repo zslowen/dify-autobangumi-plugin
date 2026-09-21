@@ -1,0 +1,26 @@
+identity:
+  name: search_mikan_anime
+  author: zslowen
+  label:
+    en_US: Search Mikan anime
+    zh_Hans: 搜索蜜柑番剧与季度
+description:
+  human:
+    en_US: Find bounded public Mikan work and season candidates before choosing an RSS feed.
+    zh_Hans: 先搜索有限的蜜柑作品与季度候选，再选择要查询 RSS 的 bangumi_id。
+  llm: First step for a Mikan subscription lookup. Search by the user's title, then use the returned bangumi_id with list_mikan_rss_candidates. Do not infer a season when candidates remain ambiguous. This tool is read-only.
+parameters:
+  - name: title
+    type: string
+    required: true
+    label:
+      en_US: Anime title
+      zh_Hans: 番剧名称
+    human_description:
+      en_US: Title or distinctive title fragment.
+      zh_Hans: 番剧名称或有辨识度的名称片段。
+    llm_description: Required title. Use its returned bangumi_id for the second-step RSS tool.
+    form: llm
+extra:
+  python:
+    source: tools/search_mikan_anime.py

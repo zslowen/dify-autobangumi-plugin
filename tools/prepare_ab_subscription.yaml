@@ -1,0 +1,70 @@
+identity:
+  name: prepare_ab_subscription
+  author: zslowen
+  label:
+    en_US: Preview AutoBangumi subscription
+    zh_Hans: 预览 AutoBangumi 订阅
+description:
+  human:
+    en_US: Parse one selected Mikan RSS and preview duplicates or conflicts without subscribing.
+    zh_Hans: 解析一个已选蜜柑 RSS，并在不创建订阅的情况下预览重复项与冲突。
+  llm: Use only after the user has selected one Mikan anime and subtitle-group RSS candidate and confirmed the final media-library title, season, and optional premiere year. AutoBangumi analysis is source metadata and may differ from the confirmed target title or season; those differences are shown as metadata_adjustment and do not block confirmation. Read group_match instead of comparing group strings yourself. exact is a direct match; joint means the selected group is one complete member of the parsed joint credit and requires explicit confirmation of the displayed effective_group; mismatch is blocked. Failures identify failure_stage and may include a safe upstream_status_code; an AutoBangumi 406 means only that analysis failed for this request. It does not prove the public RSS is bad. This tool never subscribes, downloads, refreshes, or modifies a rule.
+parameters:
+  - name: rss_url
+    type: string
+    required: true
+    label:
+      en_US: Mikan RSS URL
+      zh_Hans: 蜜柑 RSS 地址
+    human_description:
+      en_US: Public single-anime subtitle-group RSS URL returned by the Mikan candidate tool.
+      zh_Hans: 蜜柑候选工具返回的公开单部番剧字幕组 RSS 地址。
+    llm_description: Must be an allowlisted /RSS/Bangumi URL containing positive bangumiId and subgroupid values.
+    form: llm
+  - name: expected_title
+    type: string
+    required: true
+    label:
+      en_US: Confirmed final title
+      zh_Hans: 确认后的番剧名称
+    human_description:
+      en_US: Final media-library title confirmed by the user. It may differ from the parsed source title.
+      zh_Hans: 用户确认的媒体库最终番剧名称，可以与 RSS 自动解析标题不同。
+    llm_description: Final official_title to write after explicit user confirmation; this is target metadata, not an assertion about the parsed title.
+    form: llm
+  - name: expected_season
+    type: number
+    required: true
+    label:
+      en_US: Confirmed final season
+      zh_Hans: 确认后的季度
+    human_description:
+      en_US: Final positive-integer media-library season confirmed by the user. It may differ from the parsed RSS season.
+      zh_Hans: 用户确认的媒体库最终正整数季度，可以与 RSS 自动解析季度不同。
+    llm_description: Final season to write after explicit user confirmation; this is target metadata, not an assertion about the parsed season.
+    form: llm
+  - name: expected_year
+    type: number
+    required: false
+    label:
+      en_US: Confirmed premiere year (optional)
+      zh_Hans: 确认后的首播年份（可选）
+    human_description:
+      en_US: Optional four-digit premiere year for the final media-library metadata. If omitted, the parsed value or empty value is preserved.
+      zh_Hans: 可选的四位首播年份；不填写时保留自动分析值或空值。
+    llm_description: Optional four-digit target year explicitly confirmed by the user. Never infer it when uncertain.
+    form: llm
+  - name: expected_group
+    type: string
+    required: true
+    label:
+      en_US: Selected subtitle group
+      zh_Hans: 已选字幕组
+    human_description:
+      en_US: Subtitle group selected by the user from the Mikan candidates.
+      zh_Hans: 用户从蜜柑候选中选择的字幕组。
+    llm_description: The group selected by the user. It must match the complete parsed group or one complete member of a safely split joint credit after normalization. Read group_match for the result; never use substring matching or rewrite the effective group.
+    form: llm
+extra:
+  python:
+    source: tools/prepare_ab_subscription.py

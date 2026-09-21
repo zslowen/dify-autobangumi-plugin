@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AutoBangumi read-only">
+  <rect width="64" height="64" rx="12" fill="#20263b"/>
+  <path d="M16 24h32v24H16z" fill="#5aa9e6"/>
+  <path d="M21 18h22v12H21z" fill="#d7efff"/>
+  <path d="M24 37h16M24 43h10" stroke="#20263b" stroke-width="3" stroke-linecap="round"/>
+  <path d="M50 15v10M45 20h10" stroke="#f7c948" stroke-width="3" stroke-linecap="round"/>
+</svg>

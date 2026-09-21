@@ -1,0 +1,67 @@
+identity:
+  name: list_mikan_rss_candidates
+  author: zslowen
+  label:
+    en_US: List Mikan RSS candidates
+    zh_Hans: 查询指定番剧的蜜柑 RSS 候选
+description:
+  human:
+    en_US: List a bounded set of public subtitle-group RSS feeds for a selected Mikan bangumi_id.
+    zh_Hans: 根据已确认的 bangumi_id，返回有限数量的公开字幕组 RSS 候选。
+  llm: Second step after search_mikan_anime. Use only a bangumi_id returned by that tool. Optional filters narrow subtitle group, detected subtitle language, and detected resolution. Default limit is 5 and maximum is 10. Explain ambiguity rather than guessing. This tool is read-only.
+parameters:
+  - name: bangumi_id
+    type: number
+    required: true
+    label:
+      en_US: Mikan bangumi ID
+      zh_Hans: 蜜柑番剧 ID
+    human_description:
+      en_US: bangumi_id returned by Search Mikan anime.
+      zh_Hans: 由“搜索蜜柑番剧与季度”返回的 bangumi_id。
+    llm_description: Required positive integer returned by search_mikan_anime.
+    form: llm
+  - name: fansub_group
+    type: string
+    required: false
+    label:
+      en_US: Subtitle group
+      zh_Hans: 字幕组
+    human_description:
+      en_US: Optional subtitle group name filter.
+      zh_Hans: 可选，按字幕组名称筛选。
+    form: llm
+  - name: subtitle_language
+    type: string
+    required: false
+    label:
+      en_US: Subtitle language
+      zh_Hans: 字幕语言
+    human_description:
+      en_US: Optional language detected from public RSS titles.
+      zh_Hans: 可选，按公开 RSS 标题识别到的字幕语言筛选。
+    form: llm
+  - name: resolution
+    type: string
+    required: false
+    label:
+      en_US: Resolution
+      zh_Hans: 分辨率
+    human_description:
+      en_US: Optional 2160p, 1440p, 1080p, 720p, or 480p filter.
+      zh_Hans: 可选，仅支持 2160p、1440p、1080p、720p 或 480p。
+    form: llm
+  - name: limit
+    type: number
+    required: false
+    default: 5
+    label:
+      en_US: Result limit
+      zh_Hans: 返回数量上限
+    human_description:
+      en_US: Number of candidates to return, from 1 to 10.
+      zh_Hans: 返回候选数量，范围为 1 至 10，默认 5。
+    form: llm
+extra:
+  python:
+    source: tools/list_mikan_rss_candidates.py
