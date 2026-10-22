@@ -12,11 +12,6 @@ class SubscribeAbRssTool(Tool):
         yield self.create_json_message(
             subscribe_ab_rss(
                 self.runtime.credentials,
-                rss_url=tool_parameters.get("rss_url"),
-                expected_title=tool_parameters.get("expected_title"),
-                expected_season=tool_parameters.get("expected_season"),
-                expected_group=tool_parameters.get("expected_group"),
                 preview_id=tool_parameters.get("preview_id"),
-                expected_year=tool_parameters.get("expected_year"),
             )
         )

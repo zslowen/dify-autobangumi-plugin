@@ -54,6 +54,13 @@ class PluginAssetTests(unittest.TestCase):
             },
         )
 
+    def test_subscribe_tool_schema_accepts_only_preview_id(self):
+        tool = _load_yaml("tools/subscribe_ab_rss.yaml")
+        self.assertEqual(
+            [parameter["name"] for parameter in tool["parameters"]],
+            ["preview_id"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

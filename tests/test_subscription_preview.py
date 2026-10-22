@@ -232,6 +232,7 @@ class PreviewServiceTests(unittest.TestCase):
         self.assertEqual(first["requested"]["rss_url"], "https://mikanime.tv/RSS/Bangumi?bangumiId=4014&subgroupid=370")
         self.assertEqual(first["preview_id"], second["preview_id"])
         self.assertTrue(first["preview_id"].startswith("abp1_"))
+        self.assertEqual(first["preview_expires_in_seconds"], 1800)
         self.assertEqual(
             first["group_match"],
             {
@@ -364,6 +365,7 @@ class PreviewServiceTests(unittest.TestCase):
             {warning["code"] for warning in result["warnings"]},
             {"group_mismatch", "analysis_needs_review"},
         )
+        self.assertNotIn("preview_expires_in_seconds", result)
 
     def test_missing_analysis_identity_fields_block_preview(self):
         analysis = dict(ANALYSIS)

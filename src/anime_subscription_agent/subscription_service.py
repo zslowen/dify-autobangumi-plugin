@@ -5,8 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
+import time
 import unicodedata
+from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from .autobangumi import AutoBangumiError, AutoBangumiRequestError
@@ -35,6 +39,84 @@ _PARSED_OUTPUT_FIELDS = (
 
 _GROUP_SEPARATOR_RE = re.compile(r"[&+\u00d7/]")
 _HTML_AMP_RE = re.compile(r"&amp;", re.IGNORECASE)
+_CONFIRMABLE_PREVIEW_STATUSES = {
+    "ready_for_confirmation",
+    "conflict_requires_confirmation",
+}
+_PREVIEW_TTL_SECONDS = 30 * 60
+_PREVIEW_STORE_CAPACITY = 256
+
+
+@dataclass(frozen=True, slots=True)
+class _PreviewSnapshot:
+    preview_id: str
+    normalized_url: str
+    title: str
+    season: int
+    group: str
+    year: int | None
+    mikan_base_url: str
+    preview_json: str
+
+
+class _PreviewStore:
+    """Bounded process-local store for one-time confirmation snapshots."""
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = _PREVIEW_TTL_SECONDS,
+        capacity: int = _PREVIEW_STORE_CAPACITY,
+        clock=time.monotonic,
+    ) -> None:
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive.")
+        if capacity < 1:
+            raise ValueError("capacity must be positive.")
+        self._ttl_seconds = ttl_seconds
+        self._capacity = capacity
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._items: OrderedDict[str, tuple[float, _PreviewSnapshot]] = OrderedDict()
+
+    def _purge_expired(self, now: float) -> None:
+        expired = [
+            preview_id
+            for preview_id, (expires_at, _) in self._items.items()
+            if expires_at <= now
+        ]
+        for preview_id in expired:
+            self._items.pop(preview_id, None)
+
+    def put(self, snapshot: _PreviewSnapshot) -> None:
+        with self._lock:
+            now = self._clock()
+            self._purge_expired(now)
+            self._items.pop(snapshot.preview_id, None)
+            while len(self._items) >= self._capacity:
+                self._items.popitem(last=False)
+            self._items[snapshot.preview_id] = (
+                now + self._ttl_seconds,
+                snapshot,
+            )
+
+    def consume(self, preview_id: str) -> _PreviewSnapshot | None:
+        with self._lock:
+            now = self._clock()
+            self._purge_expired(now)
+            item = self._items.pop(preview_id, None)
+            return item[1] if item else None
+
+    def discard(self, preview_id: str) -> None:
+        with self._lock:
+            self._items.pop(preview_id, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+
+
+_PREVIEW_STORE = _PreviewStore()
 
 
 class SubscriptionPreparationError(DifyAutoBangumiError):
@@ -411,6 +493,40 @@ def _evaluate_preview(
     }
 
 
+def _register_confirmable_preview(
+    preview: Mapping[str, Any],
+    *,
+    normalized_url: str,
+    title: str,
+    season: int,
+    group: str,
+    year: int | None,
+    mikan_base_url: str,
+) -> None:
+    preview_id = preview.get("preview_id")
+    if not isinstance(preview_id, str):
+        raise DifyAutoBangumiError("Confirmable preview omitted preview_id.")
+    if preview.get("status") not in _CONFIRMABLE_PREVIEW_STATUSES:
+        _PREVIEW_STORE.discard(preview_id)
+        return
+    snapshot = _PreviewSnapshot(
+        preview_id=preview_id,
+        normalized_url=normalized_url,
+        title=title,
+        season=season,
+        group=group,
+        year=year,
+        mikan_base_url=mikan_base_url,
+        preview_json=json.dumps(
+            preview,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    )
+    _PREVIEW_STORE.put(snapshot)
+
+
 def prepare_ab_subscription(
     credentials: Mapping[str, Any],
     rss_url: Any,
@@ -455,7 +571,7 @@ def prepare_ab_subscription(
             "Could not read current AutoBangumi state for the preview.",
             exc,
         ) from exc
-    return _evaluate_preview(
+    preview = _evaluate_preview(
         normalized_url,
         title,
         season,
@@ -466,6 +582,18 @@ def prepare_ab_subscription(
         mikan_base_url,
         year,
     )
+    if preview["status"] in _CONFIRMABLE_PREVIEW_STATUSES:
+        preview["preview_expires_in_seconds"] = _PREVIEW_TTL_SECONDS
+    _register_confirmable_preview(
+        preview,
+        normalized_url=normalized_url,
+        title=title,
+        season=season,
+        group=group,
+        year=year,
+        mikan_base_url=mikan_base_url,
+    )
+    return preview
 
 
 def _verification_state(
@@ -515,37 +643,71 @@ def _write_result(
         "metadata_adjustment": preview["metadata_adjustment"],
         "duplicate": preview["duplicate"],
         "preview_id": preview["preview_id"],
+        "preview_consumed": True,
         "write_attempted": write_attempted,
         "verification": dict(verification),
         "warnings": warnings,
     }
 
 
+def _preview_unavailable_result(
+    preview_id: str, *, preview_consumed: bool = False
+) -> dict[str, Any]:
+    return {
+        "status": "preview_unavailable",
+        "preview_id": preview_id,
+        "preview_consumed": preview_consumed,
+        "write_attempted": False,
+        "verification": {"rss_exists": False, "rule_exists": False},
+        "warnings": [
+            {
+                "code": "preview_unavailable",
+                "message": "The preview is unknown, expired, already consumed, or was lost after plugin restart. Generate and confirm a new preview before subscribing.",
+            }
+        ],
+    }
+
+
 def subscribe_ab_rss(
     credentials: Mapping[str, Any],
-    rss_url: Any,
-    expected_title: Any,
-    expected_season: Any,
-    expected_group: Any,
     preview_id: Any,
-    expected_year: Any = None,
 ) -> dict[str, Any]:
-    """Execute one controlled write after re-analysis, re-checks, and fingerprint validation."""
+    """Consume one stored preview, revalidate it, write once, then read it back."""
     confirmed_preview_id = _require_text(preview_id, "preview_id")
     if not re.fullmatch(r"abp1_[0-9a-f]{32}", confirmed_preview_id):
         raise DifyAutoBangumiError("preview_id has an invalid format.")
 
+    snapshot = _PREVIEW_STORE.consume(confirmed_preview_id)
+    if snapshot is None:
+        return _preview_unavailable_result(confirmed_preview_id)
+    try:
+        stored_preview = json.loads(snapshot.preview_json)
+    except (TypeError, ValueError):
+        return _preview_unavailable_result(
+            confirmed_preview_id, preview_consumed=True
+        )
+    if (
+        snapshot.preview_id != confirmed_preview_id
+        or stored_preview.get("preview_id") != confirmed_preview_id
+        or stored_preview.get("status") not in _CONFIRMABLE_PREVIEW_STATUSES
+    ):
+        return _preview_unavailable_result(
+            confirmed_preview_id, preview_consumed=True
+        )
+
     environment = _project_environment()
-    mikan_base_url = environment.get("MIKAN_BASE_URL", "https://mikanime.tv")
-    normalized_url, title, season, group, year = _validated_request(
-        rss_url,
-        expected_title,
-        expected_season,
-        expected_group,
-        mikan_base_url,
-        expected_year,
-    )
-    connector = _write_connector(credentials, environment)
+    normalized_url = snapshot.normalized_url
+    title = snapshot.title
+    season = snapshot.season
+    group = snapshot.group
+    year = snapshot.year
+    mikan_base_url = snapshot.mikan_base_url
+    try:
+        connector = _write_connector(credentials, environment)
+    except (DifyAutoBangumiError, AutoBangumiError, ValueError) as exc:
+        raise DifyAutoBangumiError(
+            "Could not authenticate for the confirmed subscription. The one-time preview was consumed; generate and confirm a new preview before trying again."
+        ) from exc
 
     try:
         analysis = connector.analyze_rss(normalized_url)
@@ -553,7 +715,7 @@ def subscribe_ab_rss(
         existing_rules = connector.list_bangumi_rules()
     except (AutoBangumiError, ValueError) as exc:
         raise DifyAutoBangumiError(
-            "Could not revalidate the AutoBangumi subscription preview."
+            "Could not revalidate the AutoBangumi subscription preview. The one-time preview was consumed; generate and confirm a new preview before trying again."
         ) from exc
 
     current_preview = _evaluate_preview(

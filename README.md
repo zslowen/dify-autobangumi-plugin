@@ -14,6 +14,12 @@
 
 > 核心原则：确定性操作交给代码，模糊判断交给 Agent，产生实际影响的动作交给用户审批。
 
+## 功能演示
+
+下面展示从用户提出追番需求、筛选作品与字幕组，到确认预览并创建 AutoBangumi 订阅的完整流程。
+
+https://github.com/user-attachments/assets/64981880-d41c-40b6-9e1a-3c284c8890e0
+
 ## 项目定位
 
 ```text
@@ -30,7 +36,7 @@ Dify Agent / 大模型                 不在本仓库
 AutoBangumi 3.2.8                  负责 RSS、下载与媒体整理
 ```
 
-这个仓库解决的是 Agent 的“手和安全护栏”问题：模型不直接拼接请求、不持有局域网凭据，写工具也会拒绝没有匹配预览指纹或内容已经变化的请求。用户是否已经明确确认仍由上层 Dify 编排负责，插件不会把 `preview_id` 误当成人工授权证明。
+这个仓库解决的是 Agent 的“手和安全护栏”问题：模型不直接拼接请求、不持有局域网凭据，确认轮也不能重新提交 RSS、标题、季度、年份或字幕组。写工具只接收一次性 `preview_id`，从插件保存的不可变预览快照恢复原始参数，并拒绝未知、过期、已消费或内容已经变化的请求。用户是否已经明确确认仍由上层 Dify 编排负责，插件不会把 `preview_id` 误当成人工授权证明。
 
 ## 已实现能力
 
@@ -39,7 +45,8 @@ AutoBangumi 3.2.8                  负责 RSS、下载与媒体整理
 - 独立检查候选 RSS 的可达性、条目数量、发布时间和样本标题。
 - 识别重复 RSS、同作品季度规则、字幕组不一致和联合字幕组署名。
 - 对标题、季度和年份调整生成结构化预览，并绑定确定性的 `preview_id`。
-- 仅在传入的预览内容仍然一致时执行一次订阅写入；超时或断线后禁止自动重试。
+- 可确认预览在进程内保存 30 分钟；确认写入只传 `preview_id`，并在第一次尝试时原子消费。
+- 仅在保存的预览内容仍然一致时执行一次订阅写入；超时、断线或其他失败后禁止自动重试。
 - 写入后同时回查 RSS 与番剧规则，不把 HTTP 成功直接视为任务完成。
 - 对 Cookie、Token、账号、密码、本地路径和私人 RSS 等字段进行脱敏。
 
@@ -50,7 +57,7 @@ AutoBangumi 3.2.8                  负责 RSS、下载与媒体整理
 | AutoBangumi 兼容版本 | `3.2.8` |
 | 主流程工具 | 9 个 |
 | 兼容旧流程工具 | 1 个 |
-| 自动化测试 | 93 项通过 |
+| 自动化测试 | 100 项通过 |
 | Dify 运行形态 | Cloud 远程调试，本地插件主动连接 |
 | 写入策略 | 上层人工确认、插件一致性校验、一次写入、禁止盲目重试、写后回查 |
 
@@ -66,7 +73,7 @@ AutoBangumi 3.2.8                  负责 RSS、下载与媒体整理
 | `list_mikan_rss_candidates` | 只读 | 查询选定作品下的字幕组 RSS 候选 |
 | `inspect_mikan_rss_candidate` | 只读 | 检查单个公开 RSS 的内容、覆盖范围与可达性 |
 | `prepare_ab_subscription` | 预览 | 解析 RSS、校验用户选择、查重并生成确认指纹 |
-| `subscribe_ab_rss` | 受控写入 | 重新校验确认内容，执行一次订阅并回查结果 |
+| `subscribe_ab_rss` | 受控写入 | 仅凭一次性 `preview_id` 取回快照、重新校验、执行一次订阅并回查结果 |
 | `search_mikan_rss` | 兼容工具 | 旧版一阶段搜索；保留兼容，不建议挂载到新 Agent |
 
 ## 一次订阅任务如何闭环
@@ -78,7 +85,8 @@ AutoBangumi 3.2.8                  负责 RSS、下载与媒体整理
 → 检查选定 RSS
 → 生成订阅预览与 preview_id
 → 用户明确确认
-→ 重新解析、重新查重、重算 preview_id
+→ 仅提交 preview_id，并原子消费已保存快照
+→ 使用快照中的原始参数重新解析、重新查重、重算 preview_id
 → 最多执行一次写入
 → 回查 RSS 与番剧规则
 → 返回 created_verified / partial_state / unknown_outcome 等明确状态
@@ -217,6 +225,11 @@ Unicode NFKC、大小写和空白规范化。例如用户选择 `LoliHouse`，Au
 `rss_link`、海报地址、本地路径、过滤规则、Cookie 或 Token。`preview_id` 只证明本次预览内容一致，
 不会创建订阅，也不证明用户已经授权后续写入。
 
+仅 `ready_for_confirmation` 和 `conflict_requires_confirmation` 会登记到进程内预览存储；`blocked` 不登记，并会撤销同一
+`preview_id` 可能残留的旧快照。
+快照使用深度序列化后的不可变内容，默认 TTL 为 30 分钟，容量上限为 256 条。插件重启会清空存储，过期或被容量淘汰的
+`preview_id` 也会失效。预览输出中的 `preview_expires_in_seconds` 表示默认有效时长。
+
 `requested.group` 和 `requested.selected_group` 保留用户选择；`target.group` 和 `target.effective_group` 表示
 AutoBangumi 实际保存的完整署名。为兼容现有 Dify 参数，`expected_group` 的名称与含义不变。`preview_id` 会绑定
 selected_group、effective_group、match_type、成员顺序、目标元数据和完整分析结果；联合署名成员、顺序或匹配类型变化时，
@@ -230,10 +243,16 @@ selected_group、effective_group、match_type、成员顺序、目标元数据�
 
 ## AutoBangumi 受控订阅
 
-`subscribe_ab_rss` 是高风险工具，应只挂到具有可靠人工确认步骤的 Agent。它要求传入与
-已确认预览相同的 RSS、最终作品名、最终季数、可选最终年份、字幕组和 `preview_id`。执行前会重新解析、重新查重，并用与
-`prepare_ab_subscription` 相同的算法重算指纹。指纹或解析结果变化时返回 `analysis_mismatch`；发现相同
+`subscribe_ab_rss(preview_id)` 是高风险工具，应只挂到具有可靠人工确认步骤的 Agent。确认轮只能原样复制当前预览的
+`preview_id`，不能重新提交或拼装 RSS、最终作品名、季度、年份或字幕组。工具首先在线程锁内原子领取并移除快照，随后使用
+快照中的原始参数重新解析、重新查重，并用与 `prepare_ab_subscription` 相同的算法重算指纹。指纹或解析结果变化时返回
+`analysis_mismatch`；发现相同
 RSS 或同最终作品、季度、字幕组时返回 `already_exists_noop`，不会发出写请求。
+
+`preview_id` 是一次性的：第一次确认尝试开始时即消费，无论后续结果是成功、拒绝、超时、复核失败或回查异常，都不能再次使用。
+未知、过期、已消费或因插件重启失效的 token 返回 `preview_unavailable`、`write_attempted=false`，要求重新生成预览并再次确认。
+进程内存储适用于当前 Dify Cloud 远程调试的单个本地插件进程；如果部署为多个互不共享内存的插件实例，需要将同样的原子消费
+语义迁移到共享存储。
 
 通过校验后，工具只覆盖分析对象中的 `official_title`、`season` 和用户明确填写的 `year`，保留 `title_raw`、
 `group_name`、`rss_link`、过滤规则、字幕、清晰度和来源等分析字段；联合署名时保留 AutoBangumi 分析得到的完整

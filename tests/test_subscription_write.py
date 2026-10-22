@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import unittest
 from unittest.mock import patch
 from urllib.request import Request
@@ -13,13 +14,18 @@ from anime_subscription_agent.autobangumi_writer import (
 )
 from anime_subscription_agent.dify_adapter import DifyAutoBangumiError
 from anime_subscription_agent.subscription_service import (
+    _PREVIEW_STORE,
+    _PreviewStore,
     _evaluate_preview,
+    _register_confirmable_preview,
+    prepare_ab_subscription,
     subscribe_ab_rss,
 )
 
 
 BASE_URL = "https://mikanime.tv"
 RSS_URL = "https://mikanime.tv/RSS/Bangumi?bangumiId=4014&subgroupid=370"
+RSS_583_URL = "https://mikanime.tv/RSS/Bangumi?bangumiId=4014&subgroupid=583"
 ANALYSIS = {
     "official_title": "碧蓝之海",
     "year": 2025,
@@ -73,19 +79,25 @@ class FakeWriteConnector:
         pre_rules=None,
         post_rss=None,
         post_rules=None,
+        analysis_error=None,
         write_error=None,
         readback_error=None,
     ):
         self.analysis = dict(analysis or ANALYSIS)
+        self.analysis_error = analysis_error
         self.rss_results = [list(pre_rss or []), list(post_rss or [])]
         self.rule_results = [list(pre_rules or []), list(post_rules or [])]
         self.write_error = write_error
         self.readback_error = readback_error
         self.subscribe_calls = []
+        self.analysis_urls = []
         self.rss_calls = 0
         self.rule_calls = 0
 
     def analyze_rss(self, rss_url):
+        self.analysis_urls.append(rss_url)
+        if self.analysis_error:
+            raise self.analysis_error
         return dict(self.analysis)
 
     def list_rss(self):
@@ -118,9 +130,10 @@ def preview_id(
     season=3,
     group="LoliHouse",
     year=None,
+    rss_url=RSS_URL,
 ):
-    return _evaluate_preview(
-        RSS_URL,
+    preview = _evaluate_preview(
+        rss_url,
         title,
         season,
         group,
@@ -129,7 +142,17 @@ def preview_id(
         rules or [],
         BASE_URL,
         year,
-    )["preview_id"]
+    )
+    _register_confirmable_preview(
+        preview,
+        normalized_url=rss_url,
+        title=title,
+        season=season,
+        group=group,
+        year=year,
+        mikan_base_url=BASE_URL,
+    )
+    return preview["preview_id"]
 
 
 class WriteConnectorTests(unittest.TestCase):
@@ -178,15 +201,11 @@ class WriteConnectorTests(unittest.TestCase):
 class SubscriptionServiceTests(unittest.TestCase):
     credentials = {"ab_username": "hidden", "ab_password": "hidden"}
 
-    def subscribe(self, connector, *, confirmed_preview_id=None, **overrides):
-        values = {
-            "rss_url": RSS_URL,
-            "expected_title": "碧蓝之海",
-            "expected_season": 3,
-            "expected_group": "LoliHouse",
-            "preview_id": confirmed_preview_id or preview_id(),
-        }
-        values.update(overrides)
+    def setUp(self):
+        _PREVIEW_STORE.clear()
+
+    def subscribe(self, connector, *, confirmed_preview_id=None):
+        confirmed = confirmed_preview_id or preview_id()
         with patch(
             "anime_subscription_agent.subscription_service._project_environment",
             return_value={"MIKAN_BASE_URL": BASE_URL},
@@ -194,7 +213,7 @@ class SubscriptionServiceTests(unittest.TestCase):
             "anime_subscription_agent.subscription_service._write_connector",
             return_value=connector,
         ):
-            return subscribe_ab_rss(self.credentials, **values)
+            return subscribe_ab_rss(self.credentials, preview_id=confirmed)
 
     def test_success_requires_rss_and_rule_readback(self):
         connector = FakeWriteConnector(
@@ -231,27 +250,180 @@ class SubscriptionServiceTests(unittest.TestCase):
         self.assertEqual(hidden_result["status"], "analysis_mismatch")
         self.assertEqual(hidden_connector.subscribe_calls, [])
 
-    def test_preview_id_binds_all_target_metadata(self):
-        confirmed = preview_id()
-        cases = (
-            {"expected_title": "Different"},
-            {"expected_season": 2},
-            {"expected_year": 2024},
-            {"expected_group": "Other"},
+    def test_subscribe_service_accepts_only_credentials_and_preview_id(self):
+        self.assertEqual(
+            list(inspect.signature(subscribe_ab_rss).parameters),
+            ["credentials", "preview_id"],
         )
-        for overrides in cases:
-            with self.subTest(overrides=overrides):
-                connector = FakeWriteConnector()
-                result = self.subscribe(
-                    connector, confirmed_preview_id=confirmed, **overrides
+
+    def test_583_preview_snapshot_controls_revalidation_and_write_url(self):
+        analysis_583 = dict(
+            ANALYSIS,
+            group_name="ANi",
+            rss_link=RSS_583_URL,
+        )
+        preview_connector = FakeWriteConnector(analysis=analysis_583)
+        with patch(
+            "anime_subscription_agent.subscription_service._project_environment",
+            return_value={"MIKAN_BASE_URL": BASE_URL},
+        ), patch(
+            "anime_subscription_agent.subscription_service._preview_connector",
+            return_value=preview_connector,
+        ):
+            preview = prepare_ab_subscription(
+                self.credentials,
+                RSS_583_URL,
+                "碧蓝之海",
+                3,
+                "ANi",
+            )
+
+        write_connector = FakeWriteConnector(
+            analysis=analysis_583,
+            post_rss=[{"url": RSS_583_URL}],
+            post_rules=[
+                {
+                    "official_title": "碧蓝之海",
+                    "season": 3,
+                    "group_name": "ANi",
+                }
+            ],
+        )
+        with patch(
+            "anime_subscription_agent.subscription_service._project_environment",
+            return_value={"MIKAN_BASE_URL": BASE_URL},
+        ), patch(
+            "anime_subscription_agent.subscription_service._write_connector",
+            return_value=write_connector,
+        ):
+            result = subscribe_ab_rss(
+                self.credentials,
+                preview_id=preview["preview_id"],
+            )
+
+        self.assertEqual(result["status"], "created_verified")
+        self.assertEqual(write_connector.analysis_urls, [RSS_583_URL])
+        self.assertEqual(write_connector.subscribe_calls[0][1], RSS_583_URL)
+        self.assertNotIn("subgroupid=679", json.dumps(result, ensure_ascii=False))
+
+    def test_unknown_preview_is_rejected_before_write_connector(self):
+        unknown = "abp1_0123456789abcdef0123456789abcdef"
+        with patch(
+            "anime_subscription_agent.subscription_service._write_connector"
+        ) as connector:
+            result = subscribe_ab_rss(self.credentials, preview_id=unknown)
+        self.assertEqual(result["status"], "preview_unavailable")
+        self.assertFalse(result["preview_consumed"])
+        self.assertFalse(result["write_attempted"])
+        connector.assert_not_called()
+
+    def test_expired_preview_is_rejected_before_write_connector(self):
+        now = [100.0]
+        store = _PreviewStore(ttl_seconds=30, clock=lambda: now[0])
+        with patch(
+            "anime_subscription_agent.subscription_service._PREVIEW_STORE",
+            store,
+        ):
+            confirmed = preview_id()
+            now[0] = 131.0
+            with patch(
+                "anime_subscription_agent.subscription_service._write_connector"
+            ) as connector:
+                result = subscribe_ab_rss(
+                    self.credentials,
+                    preview_id=confirmed,
                 )
-                self.assertEqual(result["status"], "analysis_mismatch")
-                self.assertFalse(result["write_attempted"])
-                self.assertEqual(connector.subscribe_calls, [])
+        self.assertEqual(result["status"], "preview_unavailable")
+        self.assertFalse(result["write_attempted"])
+        connector.assert_not_called()
+
+    def test_consumed_preview_cannot_be_used_twice(self):
+        confirmed = preview_id()
+        connector = FakeWriteConnector(
+            post_rss=[{"url": RSS_URL}],
+            post_rules=[
+                {
+                    "official_title": "碧蓝之海",
+                    "season": 3,
+                    "group_name": "LoliHouse",
+                }
+            ],
+        )
+        with patch(
+            "anime_subscription_agent.subscription_service._project_environment",
+            return_value={"MIKAN_BASE_URL": BASE_URL},
+        ), patch(
+            "anime_subscription_agent.subscription_service._write_connector",
+            return_value=connector,
+        ) as connector_factory:
+            first = subscribe_ab_rss(self.credentials, preview_id=confirmed)
+            second = subscribe_ab_rss(self.credentials, preview_id=confirmed)
+        self.assertEqual(first["status"], "created_verified")
+        self.assertTrue(first["preview_consumed"])
+        self.assertEqual(second["status"], "preview_unavailable")
+        self.assertEqual(connector_factory.call_count, 1)
+        self.assertEqual(len(connector.subscribe_calls), 1)
+
+    def test_revalidation_failure_consumes_preview_and_requires_new_preview(self):
+        from anime_subscription_agent.autobangumi import AutoBangumiRequestError
+
+        confirmed = preview_id()
+        connector = FakeWriteConnector(
+            analysis_error=AutoBangumiRequestError("analysis unavailable")
+        )
+        with patch(
+            "anime_subscription_agent.subscription_service._project_environment",
+            return_value={"MIKAN_BASE_URL": BASE_URL},
+        ), patch(
+            "anime_subscription_agent.subscription_service._write_connector",
+            return_value=connector,
+        ) as connector_factory:
+            with self.assertRaisesRegex(
+                DifyAutoBangumiError,
+                "one-time preview was consumed",
+            ):
+                subscribe_ab_rss(self.credentials, preview_id=confirmed)
+            retry = subscribe_ab_rss(self.credentials, preview_id=confirmed)
+        self.assertEqual(retry["status"], "preview_unavailable")
+        self.assertEqual(connector_factory.call_count, 1)
+        self.assertEqual(connector.subscribe_calls, [])
+
+    def test_blocked_preview_is_never_registered(self):
+        registered = preview_id()
+        blocked = _evaluate_preview(
+            RSS_URL,
+            "碧蓝之海",
+            3,
+            "LoliHouse",
+            ANALYSIS,
+            [{"url": RSS_URL}],
+            [],
+            BASE_URL,
+        )
+        self.assertEqual(blocked["status"], "blocked")
+        self.assertEqual(blocked["preview_id"], registered)
+        _register_confirmable_preview(
+            blocked,
+            normalized_url=RSS_URL,
+            title="碧蓝之海",
+            season=3,
+            group="LoliHouse",
+            year=None,
+            mikan_base_url=BASE_URL,
+        )
+        with patch(
+            "anime_subscription_agent.subscription_service._write_connector"
+        ) as connector:
+            result = subscribe_ab_rss(
+                self.credentials,
+                preview_id=blocked["preview_id"],
+            )
+        self.assertEqual(result["status"], "preview_unavailable")
+        self.assertFalse(result["write_attempted"])
+        connector.assert_not_called()
 
     def test_preview_id_binds_joint_members_order_and_match_type(self):
         joint = dict(ANALYSIS, group_name="千夏字幕组&LoliHouse")
-        confirmed = preview_id(analysis=joint)
         variants = (
             dict(ANALYSIS, group_name="LoliHouse&千夏字幕组"),
             dict(ANALYSIS, group_name="别组&LoliHouse"),
@@ -259,6 +431,7 @@ class SubscriptionServiceTests(unittest.TestCase):
         )
         for changed in variants:
             with self.subTest(group_name=changed["group_name"]):
+                confirmed = preview_id(analysis=joint)
                 connector = FakeWriteConnector(analysis=changed)
                 result = self.subscribe(
                     connector, confirmed_preview_id=confirmed
@@ -293,7 +466,6 @@ class SubscriptionServiceTests(unittest.TestCase):
     def test_joint_duplicate_uses_effective_group_not_selected_member(self):
         joint_name = "千夏字幕组&LoliHouse"
         joint_analysis = dict(ANALYSIS, group_name=joint_name)
-        confirmed = preview_id(analysis=joint_analysis)
         existing_joint = FakeWriteConnector(
             analysis=joint_analysis,
             pre_rules=[
@@ -305,7 +477,8 @@ class SubscriptionServiceTests(unittest.TestCase):
             ],
         )
         result = self.subscribe(
-            existing_joint, confirmed_preview_id=confirmed
+            existing_joint,
+            confirmed_preview_id=preview_id(analysis=joint_analysis),
         )
         self.assertEqual(result["status"], "already_exists_noop")
         self.assertEqual(existing_joint.subscribe_calls, [])
@@ -329,7 +502,8 @@ class SubscriptionServiceTests(unittest.TestCase):
             ],
         )
         written = self.subscribe(
-            selected_member_only, confirmed_preview_id=confirmed
+            selected_member_only,
+            confirmed_preview_id=preview_id(analysis=joint_analysis),
         )
         self.assertEqual(written["status"], "created_verified")
         self.assertEqual(len(selected_member_only.subscribe_calls), 1)
@@ -373,7 +547,7 @@ class SubscriptionServiceTests(unittest.TestCase):
             group=target["expected_group"],
         )
         result = self.subscribe(
-            connector, confirmed_preview_id=confirmed, **target
+            connector, confirmed_preview_id=confirmed
         )
         self.assertEqual(result["status"], "created_verified")
         self.assertEqual(result["parsed"]["official_title"], "悠哉日常大王 Nonstop")
@@ -447,7 +621,7 @@ class SubscriptionServiceTests(unittest.TestCase):
             ],
         )
         result = self.subscribe(
-            existing_target, confirmed_preview_id=confirmed, **target
+            existing_target, confirmed_preview_id=confirmed
         )
         self.assertEqual(result["status"], "already_exists_noop")
         self.assertEqual(existing_target.subscribe_calls, [])
@@ -471,7 +645,14 @@ class SubscriptionServiceTests(unittest.TestCase):
             ],
         )
         written = self.subscribe(
-            source_only, confirmed_preview_id=confirmed, **target
+            source_only,
+            confirmed_preview_id=preview_id(
+                analysis=source_analysis,
+                title=target["expected_title"],
+                season=target["expected_season"],
+                year=target["expected_year"],
+                group=target["expected_group"],
+            ),
         )
         self.assertEqual(written["status"], "created_verified")
         self.assertEqual(len(source_only.subscribe_calls), 1)
@@ -539,10 +720,6 @@ class SubscriptionServiceTests(unittest.TestCase):
             with self.assertRaises(DifyAutoBangumiError):
                 subscribe_ab_rss(
                     self.credentials,
-                    RSS_URL,
-                    "碧蓝之海",
-                    3,
-                    "LoliHouse",
                     "invalid",
                 )
             connector.assert_not_called()

@@ -34,12 +34,17 @@ HTTP 406 只说明 AutoBangumi analysis 对该请求失败，不能说明公开 
 prepare_ab_subscription 成功后，展示 parsed、target、metadata_adjustment、字幕组和 RSS 内容摘要，并结束当前回复，
 请求用户明确确认。只有用户在后续一轮针对该预览明确确认后，才允许调用 subscribe_ab_rss。
 
+确认轮调用 subscribe_ab_rss 时，只能从当前已确认预览中原样复制 preview_id。不得重新提交、推断或拼装 rss_url、
+expected_title、expected_season、expected_year、expected_group 或 effective_group；subscribe_ab_rss 的正式工具契约只接受
+preview_id。若返回 preview_unavailable，说明预览未知、已过期、已消费或因插件重启失效，必须重新调用
+prepare_ab_subscription、重新展示完整预览并等待用户再次确认。不得自动重试同一个 preview_id。
+
 必须读取 prepare_ab_subscription 返回的 group_match：
 - match_type=exact：用户选择与 AutoBangumi 实际署名一致。
 - match_type=joint：用户选择的是联合署名中的一个完整成员。必须明确展示：
   “你选择的是 LoliHouse，实际来源署名为 千夏字幕组&LoliHouse，这是联合制作来源。”
   同时展示 warning 和 confirmation_required=true，并把这项差异放进最终确认问题。用户明确确认当前完整预览后，
-  即可按现有 preview_id 流程调用 subscribe_ab_rss，不要再制造第三轮技术确认。
+  即可只携带该 preview_id 调用 subscribe_ab_rss，不要再制造第三轮技术确认，也不要重建任何其他参数。
 - match_type=mismatch：所选字幕组与实际署名无关，保持 blocked，不得请求或执行写入。
 
 不得用子串自行判断联合署名，也不得自行改写 effective_group。requested.group/selected_group 表示用户选择；

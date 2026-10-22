@@ -173,26 +173,21 @@ class DifyToolTests(unittest.TestCase):
         self.assertFalse(result["write_attempted"])
 
     @patch("tools.subscribe_ab_rss.subscribe_ab_rss")
-    def test_subscribe_rss_passes_only_confirmed_preview_fields(self, subscribe):
+    def test_subscribe_rss_passes_only_preview_id_and_ignores_drift_fields(self, subscribe):
         subscribe.return_value = {"status": "created_verified"}
         parameters = {
-            "rss_url": "https://mikanime.tv/RSS/Bangumi?bangumiId=1&subgroupid=2",
-            "expected_title": "Example",
-            "expected_season": 2,
-            "expected_year": 2024,
-            "expected_group": "Group",
             "preview_id": "abp1_0123456789abcdef0123456789abcdef",
+            "rss_url": "https://mikanani.me/RSS/Bangumi?bangumiId=4014&subgroupid=679",
+            "expected_title": "Drifted",
+            "expected_season": 99,
+            "expected_year": 1900,
+            "expected_group": "Other",
         }
         message = next(self.tool(SubscribeAbRssTool)._invoke(parameters))
         self.assertEqual(message.message.json_object, subscribe.return_value)
         subscribe.assert_called_once_with(
             {"not": "exposed"},
-            rss_url=parameters["rss_url"],
-            expected_title="Example",
-            expected_season=2,
-            expected_group="Group",
             preview_id=parameters["preview_id"],
-            expected_year=2024,
         )
 
 
